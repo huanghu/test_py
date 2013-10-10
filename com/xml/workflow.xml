@@ -1,0 +1,518 @@
+<?xml version= "1.0" encoding="UTF-8"?>
+<workflow-app xmlns="uri:oozie:workflow:0.1" name="INT-054-egoAttrsErp_ware-W">
+ 	<start to="java_checkApp"/>
+ 	
+	<action name="java_checkApp">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoCheck</main-class>
+			<arg>{"dbSetPointerType":"pointerTime","wfName":"${wf:name()}","coorTime":"${wf:conf("nominalTime")}","wfPath":"${wf_app_path}","failClockThresholdValue":"${failThreshold}","checkLockFrequence":"${checkLockSequence}","waitingThresholdValue":"${waitingThreshold}"}</arg>
+			<capture-output/>
+		</java>
+		<ok to="java_InitialData"/>
+		<error to="kill"/>
+	</action>
+		
+	<action name="java_InitialData">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoInitialArgs</main-class>
+			<arg>{"executeMode":"${executeMode}","wfPath":"${wf_app_path}","dbNames":"${dbName}","getLatestOperationTime":"${getLatestOperationTime}","startTime":"${wf:conf("startTime")}","endTime":"${wf:conf("endTime")}","nolockTime":"${wf:conf("nolockTime")}","wfName":"${wf:name()}"}</arg>
+			<capture-output/>
+		</java>
+		<ok to="switch_startNode"/>
+		<error to="fail"/>
+	</action>
+	
+	<decision name="switch_startNode">
+		<switch>
+			<case to="java_importDataPrepare">${executeMode == '0'}</case>
+			<case to="java_importDataPrepare">${executeMode == '1'}</case>
+			<case to="mr_wareOperatorName">${executeMode == '2'}</case>
+			<case to="java_initMidTabControl">${executeMode == '3'}</case> 
+			<case to="java_updateEbsStatus">${executeMode == '4'}</case>
+			<default to="sqoop_import_ware"/>
+		</switch>
+	</decision>
+	
+	<action name="java_importDataPrepare">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoImportDataPrepare</main-class>
+			<arg>{"importPath":"${import_path}","batchNo":"${wf:actionData('java_InitialData')['batchNum']}","sqlParams":"${wf:actionData('java_InitialData')['startTime']}|${wf:actionData('java_InitialData')['endTime']}"}</arg>
+			<capture-output/>
+		</java>
+		<ok to="sqoop_import_ware"/>
+		<error to="fail"/>
+	</action>
+    
+   <!--ware-->
+    <action name="sqoop_import_ware">
+        <sqoop xmlns="uri:oozie:sqoop-action:0.2">
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+                <delete path="${nameNode}/user/${wf:user()}/temp_data/input/${queryName}/${wf:name()}"/>
+            </prepare>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+            </configuration>
+            <arg>import</arg>
+			<arg>--connect</arg>
+			<arg>${wf:actionData('java_InitialData')['importJdbcUrl']}</arg>
+			<arg>--username</arg>
+			<arg>${wf:actionData('java_InitialData')['importUserName']}</arg>
+			<arg>--password</arg>
+			<arg>${wf:actionData('java_InitialData')['importPassword']}</arg>
+            <arg>--query</arg>
+			<arg><![CDATA[${wf:actionData('java_importDataPrepare')['egoAttrsErpWare_Query']}]]></arg>
+            <arg>--split-by</arg> 
+        	<arg>${wf:actionData('java_importDataPrepare')['egoAttrsErpWare_SplitBy']}</arg>
+            <arg>--fields-terminated-by</arg>  
+            <arg>\001</arg>
+            <arg>--lines-terminated-by</arg>
+            <arg>\002</arg>
+            <arg>--null-string</arg>
+            <arg></arg>
+            <arg>--null-non-string</arg>
+            <arg></arg>
+            <arg>--target-dir</arg> 
+        	<arg>/user/${wf:user()}/temp_data/input/${queryName}/${wf:name()}</arg>
+        </sqoop>
+        <ok to="sqoop_import_productsort"/>
+        <error to="fail"/>
+    </action>
+    
+    <action name="sqoop_import_productsort">
+        <sqoop xmlns="uri:oozie:sqoop-action:0.2">
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+                <delete path="${nameNode}/user/${wf:user()}/temp_data/input/${ebookSortQueryName}/${wf:name()}"/>
+            </prepare>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+            </configuration>
+            <arg>import</arg>
+			<arg>--connect</arg>
+			<arg>${wf:actionData('java_InitialData')['importJdbcUrl']}</arg>
+			<arg>--username</arg>
+			<arg>${wf:actionData('java_InitialData')['importUserName']}</arg>
+			<arg>--password</arg>
+			<arg>${wf:actionData('java_InitialData')['importPassword']}</arg>
+            <arg>--query</arg>
+			<arg><![CDATA[${wf:actionData('java_importDataPrepare')['ebookSort_Query']}]]></arg>
+            <arg>--fields-terminated-by</arg>  
+            <arg>\001</arg>
+            <arg>--null-string</arg>
+            <arg></arg>
+            <arg>--null-non-string</arg>
+            <arg></arg>
+            <arg>-m</arg>
+            <arg>1</arg>
+            <arg>--target-dir</arg> 
+            <arg>/user/${wf:user()}/temp_data/input/${ebookSortQueryName}/${wf:name()}</arg>
+        </sqoop>
+        <ok to="sqoop_Import_admin"/>
+        <error to="fail"/>
+    </action>
+    
+	<action name="sqoop_Import_admin">
+		<sqoop xmlns="uri:oozie:sqoop-action:0.2">
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<prepare>
+				<delete path="${nameNode}/user/${wf:user()}/temp_data/input/${queryName_admin}/${wf:name()}"/>
+			</prepare>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<arg>import</arg>
+			<arg>--connect</arg>
+			<arg>${wf:actionData('java_InitialData')['importJdbcUrl']}</arg>
+			<arg>--username</arg>
+			<arg>${wf:actionData('java_InitialData')['importUserName']}</arg>
+			<arg>--password</arg>
+			<arg>${wf:actionData('java_InitialData')['importPassword']}</arg>
+			<arg>--query</arg> 
+			<arg><![CDATA[${wf:actionData('java_importDataPrepare')['adminInfo_Query']}]]></arg>
+			<arg>--split-by</arg> 
+			<arg>${wf:actionData('java_importDataPrepare')['adminInfo_SplitBy']}</arg>
+			<arg>--fields-terminated-by</arg>  
+			<arg>\001</arg>
+			<arg>--target-dir</arg> 
+			<arg>/user/${wf:user()}/temp_data/input/${queryName_admin}/${wf:name()}</arg>
+			<arg>--null-string</arg>
+			<arg></arg>
+			<arg>--null-non-string</arg>
+			<arg></arg>
+			<arg>-m</arg>
+			<arg>1</arg>
+		</sqoop>
+		<ok to="java_GetTableAllPath"/>
+		<error to="fail"/>
+	</action>
+	
+	<action name="java_GetTableAllPath">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoGetTableAllPath</main-class>
+			<arg>{"archiveTablePath":"/user/${wf:user()}/input_data/${queryNameIsErp}"}</arg>
+			<capture-output/>
+		</java>
+		<ok to="mr_wareOperatorName"/>
+		<error to="fail"/>
+	</action>
+	
+    <action name="mr_wareOperatorName">
+        <map-reduce>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+                <delete path="${nameNode}/user/${wf:user()}/temp_data/mapred/${srcSystem}/${queryNameFilterPop}/${wf:name()}"/>
+            </prepare>
+            <job-xml>${commonPath}/mr-job.xml</job-xml>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.workflow.name</name>
+                    <value>${wf:name()}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.batchnum</name>
+                    <value>${wf:actionData('java_InitialData')['batchNum']}</value>
+                </property>
+                <property>
+                    <name>mapreduce.map.class</name>
+                    <value>com.jd.ebsdi.hadoop.mapreduce.main.product.WareOperatorMapper</value>
+                </property>
+                <property>
+                    <name>mapred.reduce.tasks</name>
+                    <value>0</value>
+                </property>
+				<property>
+					<name>com.jd.ebsdi.import.data.rows</name>
+					<value>${wf:actionData('java_importDataPrepare')['egoAttrsErpWare_DataRow']}|${wf:actionData('java_importDataPrepare')['adminInfo_DataRow']}</value>
+				</property>
+                <property>
+                    <name>mapred.input.dir</name>
+                    <value>/user/${wf:user()}/temp_data/input/${queryName}/${wf:name()}</value>
+                </property>
+				<property>
+				    <name>mapred.output.dir</name>
+				    <value>/user/${wf:user()}/temp_data/mapred/${srcSystem}/${queryNameFilterPop}/${wf:name()}</value>
+				</property>
+				<property>
+					<name>mapred.cache.files</name>
+					<value>/user/${wf:user()}/temp_data/input/${queryName_admin}/${wf:name()}</value>
+				</property>
+            </configuration>
+        </map-reduce>
+        <ok to="mr_filterEbook"/>
+        <error to="fail"/>
+    </action> 
+    
+    <action name="mr_filterEbook">
+        <map-reduce>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+                <delete path="${nameNode}/user/${wf:user()}/temp_data/input/${queryNameIsErp}/${wf:name()}"/>
+            </prepare>
+            <job-xml>${commonPath}/mr-job.xml</job-xml>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.workflow.name</name>
+                    <value>${wf:name()}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.batchnum</name>
+                    <value>${wf:actionData('java_InitialData')['batchNum']}</value>
+                </property>
+                <property>
+                    <name>mapreduce.map.class</name>
+                    <value>com.jd.ebsdi.hadoop.mapreduce.main.product.egoMatch.WareFilterEbookMapper</value>
+                </property>
+                <property>
+                    <name>mapred.reduce.tasks</name>
+                    <value>0</value>
+                </property>
+				<property>
+					<name>com.jd.ebsdi.import.data.rows</name>
+					<value>${wf:actionData('java_importDataPrepare')['egoAttrsErpWare_DataRow']}|${wf:actionData('java_importDataPrepare')['adminInfo_DataRow']}</value>
+				</property>
+				<property>
+					<name>com.jd.ebsdi.mapping.ego.match.type</name>
+					<value>erp</value>
+				</property>
+                <property>
+                    <name>mapred.input.dir</name>
+                    <value>/user/${wf:user()}/temp_data/mapred/${srcSystem}/${queryNameFilterPop}/${wf:name()}</value>
+                </property>
+				<property>
+				    <name>mapred.output.dir</name>
+				    <value>/user/${wf:user()}/temp_data/input/${queryNameIsErp}/${wf:name()}</value>
+				</property>
+				<property>
+					<name>mapred.cache.files</name>
+					<value>/user/${wf:user()}/temp_data/input/${ebookSortQueryName}/${wf:name()}</value>
+				</property>
+            </configuration>
+        </map-reduce>
+        <ok to="mr_egoAttrsErpWare"/>
+        <error to="fail"/>
+    </action>
+     
+    <action name="mr_egoAttrsErpWare">
+        <map-reduce>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <prepare>
+                <delete path="${nameNode}/user/${wf:user()}/temp_data/output/${tableName}/${wf:name()}"/>
+            </prepare>
+            <job-xml>${commonPath}/mr-job.xml</job-xml>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.workflow.name</name>
+                    <value>${wf:name()}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.batchnum</name>
+                    <value>${wf:actionData('java_InitialData')['batchNum']}</value>
+                </property>
+                <property>
+                    <name>mapreduce.map.class</name>
+                    <value>com.jd.ebsdi.hadoop.mapreduce.main.product.egoMatch.EgoMatchMR$Mapper</value>
+                </property>
+                <property>
+                    <name>mapreduce.reduce.class</name>
+                    <value>com.jd.ebsdi.hadoop.mapreduce.main.product.egoMatch.EgoMatchReducer</value>
+                </property>
+				<property>
+					<name>mapred.mapoutput.key.class</name>
+					<value>com.jd.ebsdi.hadoop.mapreduce.main.common.MainPair</value>
+				</property>
+                <property>
+                	<name>mapred.output.value.groupfn.class</name>
+                	<value>com.jd.ebsdi.hadoop.mapreduce.main.common.MainGroupComparator</value>
+                </property>
+                <property>
+                	<name>mapreduce.partitioner.class</name>
+                	<value>com.jd.ebsdi.hadoop.mapreduce.main.common.MainPartioner</value>
+                </property>
+                 <property>
+                     <name>com.jd.ebsdi.mapping.path</name>
+                     <value>${mapping_path}</value>
+                </property>
+				<property>
+					<name>com.jd.ebsdi.mapping.path.attrs</name>
+					<value>${attrs_path}</value>
+				</property>
+				<property>
+					<name>com.jd.ebsdi.mapping.ego.match.firstKey</name>
+					<value>wid</value>
+				</property>
+				<property>
+					<name>com.jd.ebsdi.mapping.ego.match.secondKey</name>
+					<value>adddate</value>
+				</property>
+				<property>
+					<name>com.jd.ebsdi.import.data.rows</name>
+					<value>${wf:actionData('java_importDataPrepare')['egoAttrsErpWare_DataRow']}</value>
+				</property>
+				<property>
+					<name>com.jd.ebsdi.import.data.starttimePath</name>
+					<value>${wf_app_path}/_STARTTIME</value>
+				</property>		
+                <property>
+                    <name>mapred.input.dir</name>
+                    <value>/user/${wf:user()}/temp_data/input/${queryNameIsErp}/${wf:name()},${wf:actionData('java_GetTableAllPath')['tableAllPath']}</value>
+                </property>
+				<property>
+				    <name>mapred.output.dir</name>
+				    <value>/user/${wf:user()}/temp_data/output/${tableName}/${wf:name()}</value>
+				</property>
+            </configuration>
+        </map-reduce>
+        <ok to="java_initMidTabControl"/>
+        <error to="fail"/>
+    </action>
+    
+	<action name='java_initMidTabControl'>
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoInitMidTabControl</main-class>
+			<arg>{"tableNames":"${tableName}","wfName":"${wf:name()}","initStatus":"1","srcSystem":"${srcSystem}","groupName":"${groupName}","batchNo":"${wf:actionData('java_InitialData')['batchNum']}"}</arg>
+		</java>
+		<ok to="export_egoAttrsErp_ware"/>
+		<error to="fail"/>
+	</action>
+    
+    <!--export to oracle-->
+    <action name="export_egoAttrsErp_ware">
+        <map-reduce>
+            <job-tracker>${jobTracker}</job-tracker>
+            <name-node>${nameNode}</name-node>
+            <job-xml>${commonPath}/export-job.xml</job-xml>
+            <configuration>
+                <property>
+                    <name>mapred.job.queue.name</name>
+                    <value>${queueName}</value>
+                </property>
+                <property>
+                    <name>com.jd.ebsdi.mapreduce.workflow.name</name>
+                    <value>${wf:name()}</value>
+                </property>
+				 <property>
+				     <name>com.jd.ebsdi.mapping.path</name>
+				     <value>${mapping_path}</value>
+				</property>
+                <property>
+                    <name>mapred.input.dir</name>
+                   	<value>/user/${wf:user()}/temp_data/output/${tableName}/${wf:name()}</value>
+                </property>
+            </configuration>
+        </map-reduce>
+        <ok to="java_updateEbsStatus"/>
+        <error to="fail"/>
+    </action>
+
+	<action name='java_updateEbsStatus'>
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoUpdateEbsStatus</main-class>
+			<arg>{"tableNames":"${tableName}","status":"2","whereSql":"PROCESS_STATUS=1 and JD_PROCESSOR='${wf:name()}' and BATCH_NO='${wf:actionData('java_InitialData')['batchNum']}'","batchNo":"${wf:actionData('java_InitialData')['batchNum']}"}</arg>
+		</java>
+		<ok to="java_finalization"/>
+		<error to="fail"/>
+	</action>
+
+	<action name="java_finalization">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoFinalClear</main-class>
+			<arg>{"handlerChainType":"COMM","wfPath":"${wf_app_path}","endTime":"${wf:actionData('java_InitialData')['endTime']}","batchNo":"${wf:actionData('java_InitialData')['batchNum']}","sceneName":"${wf:name()}","queryNames":"${queryName},${queryNameIsErp}","tableNames":"${tableName}","wfName":"${wf:name()}","wfId":"${wf:id()}","indexDataPath":"${wf:actionData('java_updateEbsStatus')['indexPathParam']}"}</arg>
+			<capture-output/>
+		</java>
+		<ok to="end"/>
+		<error to="fail"/>
+	</action>
+	
+	<action name="fail">
+		<java>
+			<job-tracker>${jobTracker}</job-tracker>
+			<name-node>${nameNode}</name-node>
+			<configuration>
+				<property>
+					<name>mapred.job.queue.name</name>
+					<value>${queueName}</value>
+				</property>
+			</configuration>
+			<main-class>com.jd.ebsdi.hadoop.mapreduce.ooziemain.main.DoFinalClear</main-class>
+			<arg>{"handlerChainType":"FAIL","wfPath":"${wf_app_path}","wfName":"${wf:name()}"}</arg>
+			<capture-output/>
+		</java> 
+		<ok to="fail_workflow"/>
+		<error to="kill"/>
+	</action>
+	  
+    <action name="fail_workflow">
+        <sub-workflow>
+            <app-path>${commonPath}/fail-workflow.xml</app-path>
+            <propagate-configuration/>
+            <configuration>
+                <property>
+                    <name>error_count</name>
+                    <value>${wf:conf("error_count")}</value>
+                </property>
+                <property>
+                    <name>workflowName</name>
+                    <value>${wf:name()}</value>
+                </property>
+                <property>
+                    <name>lastErrorNode</name>
+                    <value>${wf:lastErrorNode()}</value>
+                </property>
+                <property>
+                    <name>errorMessage</name>
+                    <value>${wf:errorMessage(wf:lastErrorNode())}</value>
+                </property>
+            </configuration>
+        </sub-workflow>
+        <ok to="end"/>
+        <error to="kill"/>
+    </action>
+    <kill name="kill">
+        <message>Workflow killed, error message[${wf:errorMessage(wf:lastErrorNode())}]</message>
+    </kill>    
+    <end name="end"/>
+</workflow-app>

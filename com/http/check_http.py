@@ -3,6 +3,7 @@
 Created on 2013-4-3
 
 @author: huanghu
+通过url判断是否存在此连接
 '''
 import httplib, urlparse
 

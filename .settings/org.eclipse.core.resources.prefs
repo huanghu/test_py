@@ -1,9 +1,15 @@
-#Mon Oct 14 20:15:07 GMT+08:00 2013
+#Fri Mar 28 21:24:02 GMT+08:00 2014
 eclipse.preferences.version=1
+encoding//com/dict/dictDemo.py=utf-8
+encoding//com/file/fileDemo.py=utf-8
 encoding//com/http/check_http.py=utf-8
+encoding//com/list/listDemo.py=utf-8
 encoding//com/object-oriented/son.py=utf-8
 encoding//com/property/propertyDemo.py=utf-8
 encoding//com/string/join.py=utf-8
+encoding//com/string/split.py=utf-8
 encoding//com/string/str_format.py=utf-8
+encoding//com/string/strip.py=utf-8
 encoding//com/xml/xmlRead.py=utf-8
+encoding//com/xml/xmlWrite.py=utf-8
 encoding/<project>=UTF-8
